@@ -134,8 +134,15 @@ int main(int argc, char *argv[], char *envp[]) {
     }
 
     if (child_proc > 0) {
-        wait(NULL);
-        return 0;
+        int status;
+        while (waitpid(child_proc, &status, 0) == -1) {
+            if (errno == EINTR) continue;
+            perror("waitpid");
+            return 1;
+        }
+        if (WIFEXITED(status)) return WEXITSTATUS(status);
+        if (WIFSIGNALED(status)) return 128 + WTERMSIG(status);
+        return 1;
     }
 
     if (mount("proc", "/proc", "proc", 0, NULL) != 0) {

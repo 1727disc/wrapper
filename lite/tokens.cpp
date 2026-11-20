@@ -247,8 +247,13 @@ static bool write_token_file(const std::string& path, const std::string& content
         LOG_WARN("failed to write %s", path.c_str());
         return false;
     }
-    fwrite(content.data(), 1, content.size(), fp);
-    fclose(fp);
+    const bool wrote_all = fwrite(content.data(), 1, content.size(), fp) == content.size();
+    const bool closed_ok = fclose(fp) == 0;
+    if (!wrote_all || !closed_ok) {
+        LOG_WARN("failed to write %s", path.c_str());
+        remove(tmp.c_str());
+        return false;
+    }
     if (rename(tmp.c_str(), path.c_str()) != 0) {
         LOG_WARN("failed to rename %s -> %s", tmp.c_str(), path.c_str());
         remove(tmp.c_str());
@@ -273,7 +278,10 @@ bool refresh_tokens(std::string& out_storefront, std::string& out_dev_token, std
         LOG_WARN("failed to get dev token");
         return false;
     }
-    write_token_file(std::string(g_base_dir) + "/DEV_TOKEN", std::string(devToken));
+    if (!write_token_file(std::string(g_base_dir) + "/DEV_TOKEN", std::string(devToken))) {
+        free(devToken);
+        return false;
+    }
 
     char* musicToken = get_music_user_token_impl(devToken);
     std::string music;
@@ -292,8 +300,10 @@ bool refresh_tokens(std::string& out_storefront, std::string& out_dev_token, std
         return false;
     }
 
-    write_token_file(std::string(g_base_dir) + "/STOREFRONT_ID", sf);
-    write_token_file(std::string(g_base_dir) + "/MUSIC_TOKEN", music);
+    if (!write_token_file(std::string(g_base_dir) + "/STOREFRONT_ID", sf) ||
+        !write_token_file(std::string(g_base_dir) + "/MUSIC_TOKEN", music)) {
+        return false;
+    }
 
     std::string freshDev = read_token_file(std::string(g_base_dir) + "/DEV_TOKEN");
     out_storefront = std::move(sf);

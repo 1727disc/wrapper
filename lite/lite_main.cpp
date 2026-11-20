@@ -733,13 +733,19 @@ int main(int argc, char* argv[]) {
         res.set_content(json_error(500, "internal error"), "application/json");
     });
 
+    if (!svr.bind_to_port(g_host.c_str(), g_port)) {
+        LOG_ERROR("failed to bind wrapper-lite to %s:%d", g_host.c_str(), g_port);
+        return 1;
+    }
+
     g_refresh_stop.store(false);
+    g_svr = &svr;
     std::thread refresh_thread(token_refresh_worker);
     std::thread sig_thread(signal_worker);
-    g_svr = &svr;
 
     LOG_INFO("wrapper-lite listening on %s:%d", g_host.c_str(), g_port);
-    svr.listen(g_host.c_str(), g_port);
+    const bool listen_ok = svr.listen_after_bind();
+    if (!listen_ok) LOG_ERROR("wrapper-lite server failed while listening");
 
     g_refresh_stop.store(true);
     pthread_kill(sig_thread.native_handle(), SIGTERM);
@@ -752,5 +758,5 @@ int main(int argc, char* argv[]) {
     g_svr = nullptr;
     LOG_INFO("wrapper-lite stopped");
 
-    return 0;
+    return listen_ok ? 0 : 1;
 }

@@ -2,7 +2,7 @@ name: build-lite
 
 on:
   push:
-    branches: [ lite ]
+    branches: [ lite, development ]
   workflow_dispatch:
 
 env:
@@ -191,6 +191,7 @@ jobs:
     name: Package wrapper-lite-qemu (${{ matrix.name }})
     needs: build-wrapper-lite
     strategy:
+      fail-fast: false
       matrix:
         include:
           - name: linux-x86_64
@@ -203,8 +204,11 @@ jobs:
             os: windows-2022
             artifact_suffix: windows-x86_64
           - name: macos-aarch64
-            os: macos-14
+            os: macos-15
             artifact_suffix: macos-aarch64
+          - name: macos-x86_64
+            os: macos-15-intel
+            artifact_suffix: macos-x86_64
 
     runs-on: ${{ matrix.os }}
 
@@ -225,7 +229,7 @@ jobs:
 
       - name: Install QEMU (macOS)
         if: runner.os == 'macOS'
-        run: brew install qemu
+        run: brew install qemu dylibbundler
 
       - name: Install QEMU (Windows)
         if: runner.os == 'Windows'
@@ -330,7 +334,34 @@ jobs:
             $bios = Get-ChildItem -Path $qemuDir -Recurse -Filter 'bios-256k.bin' -File -ErrorAction SilentlyContinue | Select-Object -First 1
             if ($bios) { Copy-Item -Recurse -Force (Join-Path $bios.DirectoryName '*') $dst }
           }
+      - name: Bundle and verify macOS libraries
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f dist/qemu/bin/qemu-system-x86_64
+          mkdir -p dist/qemu/lib
+          dylibbundler -od -b -x dist/qemu/bin/qemu-system-x86_64 \
+            -d dist/qemu/lib/ -p @executable_path/../lib/
+          # No library may depend on Homebrew paths from this runner.
+          while IFS= read -r -d '' file; do
+            if otool -L "$file" | tail -n +2 | grep -E '/(opt/homebrew|usr/local)/(opt|Cellar)/'; then
+              echo "::error::Unbundled Homebrew dependency in $file"
+              exit 1
+            fi
+          done < <(find dist/qemu/lib -type f -name '*.dylib' -print0; printf '%s\0' dist/qemu/bin/qemu-system-x86_64)
+          env -u DYLD_LIBRARY_PATH dist/qemu/bin/qemu-system-x86_64 --version
+          tar -czf "wrapper-lite-qemu-${{ matrix.artifact_suffix }}.tar.gz" -C dist .
+
+      - name: Upload macOS QEMU package
+        if: runner.os == 'macOS'
+        uses: actions/upload-artifact@v7
+        with:
+          name: wrapper-lite-qemu-${{ matrix.artifact_suffix }}
+          path: wrapper-lite-qemu-${{ matrix.artifact_suffix }}.tar.gz
+
       - name: Upload QEMU package
+        if: runner.os != 'macOS'
         uses: actions/upload-artifact@v7
         with:
           name: wrapper-lite-qemu-${{ matrix.artifact_suffix }}

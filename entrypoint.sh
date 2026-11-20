@@ -1,11 +1,9 @@
 #!/bin/sh
 set -e
 
-TOKEN_DB_PATH="/app/rootfs/data/data/com.apple.android.music/files/mpl_db/kvs.sqlitedb"
+TOKEN_DB_PATH="/app/rootfs/data/mpl_db/kvs.sqlitedb"
 
-if [ ! -d "/app/rootfs/data/data/com.apple.android.music/files" ]; then
-  mkdir -p "/app/rootfs/data/data/com.apple.android.music/files"
-fi
+mkdir -p "/app/rootfs/data/mpl_db"
 
 if [ "$(stat -c %U "/app/rootfs/data")" != "root" ] || [ "$(stat -c %G "/app/rootfs/data")" != "root" ]; then
   chown -R root:root "/app/rootfs/data"
